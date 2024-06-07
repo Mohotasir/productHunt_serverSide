@@ -27,6 +27,12 @@ async function run() {
     const productCollection = client.db("Phunt").collection("allProducts");
     const userCollection = client.db("Phunt").collection("users");
     const reviewCollection = client.db("Phunt").collection("review");
+    //jwt api.................
+    app.post('/jwt',async(req,res)=>{
+       const user =  req.body;
+       const token = jwt.sign(user , process.env.ACCESS_TOKEN_SECRET ,{ expiresIn : '1hr'})
+       res.send({token})
+    })
     app.get("/products", async (req, res) => {
       const products = await productCollection
         .find()
@@ -70,6 +76,28 @@ async function run() {
         res.status(500).send(error.message);
       }
     });
+    //update post status
+    // app.patch("/product/:id", async (req, res) => {
+    //   const id = req.params.id;
+    //   const { status } = req.body;
+    //   const result = await productCollection.updateOne(
+    //     { _id: new ObjectId(id) },
+    //     { $set: { status: status } }
+    //   );
+    //   res.send(result);
+    // });
+    app.patch("/product/:id", async (req, res) => {
+      const id = req.params.id;
+      const { status ,featured } = req.body;
+      const updateFields = {};
+      if (status) updateFields.status = status;
+      if (featured) updateFields.featured = featured;
+      const result = await productCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set:updateFields}
+      );
+      res.send(result);
+    });
     //update user role
     app.patch("/user/:id", async (req, res) => {
       const id = req.params.id;
@@ -100,7 +128,7 @@ async function run() {
     //review data
     app.get("/review/:id", async (req, res) => {
       const id = req.params.id;
-      const query = { productId : id}
+      const query = { productId: id };
       const result = await reviewCollection.find(query).toArray();
       res.send(result);
     });
