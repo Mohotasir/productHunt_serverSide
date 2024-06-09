@@ -2,6 +2,7 @@ const express = require("express");
 const app = express();
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 require("dotenv").config();
 const port = process.env.PORT || 5000;
 
@@ -27,12 +28,31 @@ async function run() {
     const productCollection = client.db("Phunt").collection("allProducts");
     const userCollection = client.db("Phunt").collection("users");
     const reviewCollection = client.db("Phunt").collection("review");
+    const couponCollection = client.db("Phunt").collection("coupon");
+    //-------------middlewares.................
+    const verifyToken = (req, res, next) => {
+      console.log(req.headers);
+      if (!req.headers.authorization) {
+        return res.status(401).send({ message: "forbiddeen accesss" });
+      }
+      const token = req.headers.authorization.split(" ")[1];
+      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
+          return res.status(401).send({ message: "forbidden access" });
+        }
+        req.decoded = decoded;
+        next();
+      });
+    };
     //jwt api.................
-    app.post('/jwt',async(req,res)=>{
-       const user =  req.body;
-       const token = jwt.sign(user , process.env.ACCESS_TOKEN_SECRET ,{ expiresIn : '1hr'})
-       res.send({token})
-    })
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: "1hr",
+      });
+      res.send({ token });
+    });
+    //////////////////////////////
     app.get("/products", async (req, res) => {
       const products = await productCollection
         .find()
@@ -46,7 +66,7 @@ async function run() {
       const result = await productCollection.findOne({ _id: objectId });
       res.send(result);
     });
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyToken, async (req, res) => {
       const user = await userCollection
         .find()
         .sort({ timestamp: -1 })
@@ -63,8 +83,11 @@ async function run() {
         .toArray();
       res.send(result);
     });
-    app.get("/user/:email", async (req, res) => {
+    app.get("/user/:email", verifyToken, async (req, res) => {
       const email = req.params.email;
+      if (email !== req.decoded.email) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
       try {
         const user = await userCollection.findOne({ email: email });
         if (user) {
@@ -76,25 +99,41 @@ async function run() {
         res.status(500).send(error.message);
       }
     });
-    //update post status
-    // app.patch("/product/:id", async (req, res) => {
-    //   const id = req.params.id;
-    //   const { status } = req.body;
-    //   const result = await productCollection.updateOne(
-    //     { _id: new ObjectId(id) },
-    //     { $set: { status: status } }
-    //   );
-    //   res.send(result);
-    // });
+    app.get("/products", async (req, res) => {
+      try {
+          const page = parseInt(req.query.page) || 1;
+          const limit = parseInt(req.query.limit) || 4;
+          const skip = (page - 1) * limit;
+  
+          // Retrieve total count of products
+          const total = await productCollection.countDocuments();
+  
+          // Retrieve subset of products for the requested page
+          const products = await productCollection.find().skip(skip).limit(limit).toArray();
+  
+          // Send response with total count and products
+          res.send({
+              total,
+              products,
+          });
+      } catch (error) {
+          console.error("Error fetching products:", error);
+          res.status(500).send("Error fetching products");
+      }
+  });
+  
+  
+    
+    
     app.patch("/product/:id", async (req, res) => {
       const id = req.params.id;
-      const { status ,featured } = req.body;
+      const { status, featured } = req.body;
       const updateFields = {};
       if (status) updateFields.status = status;
       if (featured) updateFields.featured = featured;
       const result = await productCollection.updateOne(
         { _id: new ObjectId(id) },
-        { $set:updateFields}
+        { $set: updateFields }
       );
       res.send(result);
     });
@@ -132,18 +171,119 @@ async function run() {
       const result = await reviewCollection.find(query).toArray();
       res.send(result);
     });
+    app.get("/coupon/:id", async (req, res) => {
+      const id = req.params.id;
+      const objectId = new ObjectId(id);
+      const result = await couponCollection.findOne({ _id: objectId });
+      res.send(result);
+    });
     app.post("/review", async (req, res) => {
       const rev = req.body;
       const result = await reviewCollection.insertOne(rev);
       res.send(result);
     });
-    app.delete("/products/:id", async (req, res) => {
+    //vote count----------------
+    app.patch("/product/:id/vote", async (req, res) => {
+      const productId = req.params.id;
+      const userEmail = req.body.userEmail;
+
+      try {
+        const product = await productCollection.findOne({
+          _id: new ObjectId(productId),
+        });
+
+        if (!product.voters) {
+          product.voters = [];
+        }
+
+        if (product.voters.includes(userEmail)) {
+          return res.status(400).send("User has already voted");
+        }
+
+        const result = await productCollection.updateOne(
+          { _id: new ObjectId(productId) },
+          {
+            $inc: { upvoteCount: 1 },
+            $push: { voters: userEmail },
+          }
+        );
+      } catch (err) {
+        console.error(err);
+        res.status(500).send("Internal Server Error");
+      }
+    });
+    //coupon.............
+    app.get('/coupon',async(req,res)=>{
+      const cpn = await couponCollection
+      .find()
+      .sort({ timestamp: -1 })
+      .toArray();
+    res.send(cpn);
+    })
+    app.post('/coupon',async(req,res)=>{
+       const cpn = req.body;
+       const result = await couponCollection.insertOne(cpn);
+       res.send(result)
+    })
+    app.delete("/product/:id", async (req, res) => {
       const id = req.params.id;
       console.log("deleted id is:", id);
       const query = { _id: new ObjectId(id) };
       const result = await productCollection.deleteOne(query);
       res.send(result);
     });
+    app.delete("/coupon/:id", async (req, res) => {
+      const id = req.params.id;
+      console.log("deleted id is:", id);
+      const query = { _id: new ObjectId(id) };
+      const result = await couponCollection.deleteOne(query);
+      res.send(result);
+    });
+    app.get("/admin-stat", async (req, res) => {
+      const users = await userCollection.estimatedDocumentCount();
+      const reviews = await reviewCollection.estimatedDocumentCount();
+      const products = await productCollection.estimatedDocumentCount();
+
+      res.send({
+        users,
+        reviews,
+        products,
+      });
+    });
+    // payment ===========--------------------
+    //-----------------------------------------
+    app.post("/create-payment-intent", async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price * 100);
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        payment_method_types: ["card"],
+      });
+      res.send({
+        clientSecret: paymentIntent.client_secert,
+      });
+    });
+    /////////////////////////
+    // app.get("/products", async (req, res) => {
+    //   try {
+    //     const tags = req.query.tags ? req.query.tags.split(",") : [];
+    
+    //     // Create a search filter if tags are provided
+    //     const searchFilter = tags.length > 0 ? { tags: { $in: tags } } : {};
+    
+    //     // Retrieve all products matching the search filter
+    //     const products = await productCollection.find(searchFilter).toArray();
+    
+    //     // Send response with products
+    //     res.send({ products });
+    //   } catch (error) {
+    //     console.error("Error fetching products:", error);
+    //     res.status(500).send("Error fetching products");
+    //   }
+    // });
+    
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
