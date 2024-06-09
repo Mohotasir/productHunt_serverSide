@@ -6,7 +6,17 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 require("dotenv").config();
 const port = process.env.PORT || 5000;
 
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://phunt-9a498.web.app/",
+      "https://phunt-9a498.firebaseapp.com/",
+    ],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -24,7 +34,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    //await client.connect();
     const productCollection = client.db("Phunt").collection("allProducts");
     const userCollection = client.db("Phunt").collection("users");
     const reviewCollection = client.db("Phunt").collection("review");
@@ -284,10 +294,10 @@ async function run() {
     //   }
     // });
     
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
     // Ensures that the client will close when you finish/error
     //await client.close();
