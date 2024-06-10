@@ -10,8 +10,8 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "https://phunt-9a498.web.app/",
-      "https://phunt-9a498.firebaseapp.com/",
+      "https://phunt-9a498.web.app",
+      "https://phunt-9a498.firebaseapp.com",
     ],
     credentials: true,
   })
@@ -66,7 +66,7 @@ async function run() {
     app.get("/products", async (req, res) => {
       const products = await productCollection
         .find()
-        .sort({ timestamp: -1 })
+        .sort({ upvoteCount : -1 })
         .toArray();
       res.send(products);
     });
